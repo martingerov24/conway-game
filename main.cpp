@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 #include "../external/Game.h"
+#include "../external/threadPool.h"
+#include "../external/GameCuda.h"
 
 #if DEBUG==0
 void debugWrite(std::vector<uint8_t>& img, int32_t height, int32_t width, int32_t channels = 1)
@@ -82,16 +84,21 @@ void createContext(GLFWwindow* window)
 
 void loop() // this was used for cuda, but i will send you the code later this week
 {	
-	char* filename = "../image.pbm";
+	char* filename = "../conwayGame.png";
 	int width; int height;
-	std::vector<uint8_t> image = readingP1(filename, height, width);
+	std::vector<uint8_t> image = readFile(filename, height, width);
 
-	Game game(image, height, width);
-	game.imageIteration();
-
-
-
-	debugWrite(image, height, width);
+	/// <for Cuda>
+	/// to be fully async i provide on each use stream, where the code will be executed, 
+	/// but if you provide different one, data won't be malloced 
+	/// </for Cuda>
+	cudaStream_t stream;
+	CudaGame game(image, height, width);
+	game.streamSetupAndCreate();
+	game.memoryAllocationAsyncOnDevice(stream); // this is the malloc for cuda
+	game.cudaUploadImage(stream);
+	game.kernel(stream);
+	//untill wile loop, there won't be anything interesting, but only opengl code
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 
@@ -134,6 +141,6 @@ void loop() // this was used for cuda, but i will send you the code later this w
 	glfwDestroyWindow(window);
 }
 int main() {
-	loop();
+	loop(); // loop is the Start function, where all thins are invocked
 	return 0;
 }

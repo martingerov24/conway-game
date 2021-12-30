@@ -41,6 +41,10 @@ set(SOURCES
 main.cpp
 external/stb_image.h
 external/stbi_write.h
+external/threadPool.h
+external/Game.h
+external/GameCuda.h
+cudaCode/kernel.cu
 ${IMGUI_SOURCES}
 )
 
