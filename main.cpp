@@ -19,6 +19,7 @@
 #include "../external/threadPool.h"
 #include "../external/GameCuda.h"
 
+
 #if DEBUG==0
 void debugWrite(std::vector<uint8_t>& img, int32_t height, int32_t width, int32_t channels = 1)
 {
@@ -32,7 +33,7 @@ std::vector<uint8_t> readFile(char* fileName, int32_t& height, int32_t& width)
 	unsigned char* rawImage = stbi_load(fileName, &width, &height, &channels, 1);
 	if (rawImage == NULL) { throw "the input image is null"; }
 
-	std::vector<uint8_t> image(height * width);
+	std::vector<uint8_t> image(height * width );
 	memcpy(&image[0], rawImage, image.size());
 	if (image.empty()) { throw "vector was not filled with data"; }
 
@@ -83,21 +84,49 @@ void createContext(GLFWwindow* window)
 }
 
 void loop() // this was used for cuda, but i will send you the code later this week
-{	
-	char* filename = "../conwayGame.png";
+{
 	int width; int height;
-	std::vector<uint8_t> image = readFile(filename, height, width);
 
+
+	bool ifP1 = 0; // this is mainly used for debug, in smaller images, like what you provided
+	//that's why i did not do it in separated cuda function
+
+
+	std::vector<uint8_t> image;
+	if (ifP1)
+	{
+		char* filename = "../image.pbm";
+		image = readingP1(filename, height, width);
+		for (int i = 0; i < image.size(); i++)
+		{
+			image[i] *= 255;
+		}
+	}
+	else
+	{
+		char* filename = "../conwayGame.png";
+		image = readFile(filename, height, width);
+	}
+		std::vector<uint8_t> result(image.size());
 	/// <for Cuda>
 	/// to be fully async i provide on each use stream, where the code will be executed, 
 	/// but if you provide different one, data won't be malloced 
 	/// </for Cuda>
+	cudaError_t cudaStatus = cudaError_t(0);
+	cudaDeviceSetCacheConfig(cudaFuncCachePreferShared);
+	cudaStatus = cudaSetDevice(0);
+	assert(cudaStatus == cudaSuccess && "you do not have cuda capable device!");
 	cudaStream_t stream;
+	cudaStatus = cudaStreamCreate(&stream);
+	assert(cudaStatus == cudaSuccess && "you do not have cuda capable device!");
+
 	CudaGame game(image, height, width);
-	game.streamSetupAndCreate();
-	game.memoryAllocationAsyncOnDevice(stream); // this is the malloc for cuda
-	game.cudaUploadImage(stream);
+	game.memoryAllocationAsyncOnDevice(stream,cudaStatus); // this is the malloc for cuda
+	game.cudaUploadImage(stream, cudaStatus);
 	game.kernel(stream);
+	game.downloadAsync(stream, result, image.size(), cudaStatus);
+
+
 	//untill wile loop, there won't be anything interesting, but only opengl code
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -106,7 +135,6 @@ void loop() // this was used for cuda, but i will send you the code later this w
 	if (!glfwInit()) {
 		throw "glfwInit() FAILED!";
 	}
-
 	GLFWwindow* window = glfwCreateWindow(800, 600, "Raw-File Viewer", NULL, NULL);
 
 	if (!window) {
@@ -114,18 +142,28 @@ void loop() // this was used for cuda, but i will send you the code later this w
 		throw "no window created";
 	}
 	createContext(window);
+	game.sync(stream, cudaStatus);
 
 	bool is_show = true;
 	GLuint texture;
 	glGenTextures(1, &texture);
 
+
+
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);// super special, 1 day of debugging until i found that opengl by default have padding
 	while (!glfwWindowShouldClose(window))
 	{
+		//game.cudaUploadImage(stream, cudaStatus);
+		//game.kernel(stream);
+		//game.downloadAsync(stream, result, image.size(), cudaStatus);
 		onNewFrame();
 		ImGui::Begin("raw Image", &is_show);
 		bindTexture(texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, image.data());
-		ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(texture)), ImVec2(width, height));
+		//game.sync(stream, cudaStatus);
+		//game.sync(stream, cudaStatus);
+		image = result;
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, image.data());
+		ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(texture)), ImVec2(1024, 512));
 		ImGui::End();
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::Render();
@@ -139,6 +177,8 @@ void loop() // this was used for cuda, but i will send you the code later this w
 	ImGui::DestroyContext();
 	glfwTerminate();
 	glfwDestroyWindow(window);
+
+	game.cudaFreeAcync(stream, cudaStatus);
 }
 int main() {
 	loop(); // loop is the Start function, where all thins are invocked

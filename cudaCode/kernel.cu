@@ -1,48 +1,62 @@
 #include "../external/GameCuda.h"
 
-__device__ __forceinline__
-uint8_t Color(uint16_t number)
-{
-	uint8_t n;
-	// this is the solution if little indian
-	uint8_t first_8_bits = number & 0b11111111; first_8_bits = first_8_bits >> 4;
-	number = number >> 8;
-	n = number & 0b11111111; n = n >> 4;
-	// so now we have smth like bit1 -> 10101011, bit0 -> 10101011;
-	n = n & 0b1111; // basicly the paddings are throun away
-	// now we have 2 4 bit numbers and when combining them OR || XOR
-	n = n << 4;
-	n |= first_8_bits;
-	// the second number is our putput
-	return n;
-}
 
+__device__ __forceinline__
+uint8_t Alive(int number)
+{
+	if (number == 765|| // if true the sum is either 3 alive or 2 alive
+		number == 510)  // and i make the pixel black
+	{
+		return 255; 
+	}
+	return 0;
+}
 __global__
-void Checker(uint8_t* __restrict__ d_Data, int width, int height) // what a name for a function, right? ha-ha ,it was a long process until i name it that way
+void Checker(uint8_t* __restrict__ d_Data, uint8_t* result, int width, int height) // what a name for a function, right? ha-ha ,it was a long process until i name it that way
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	if (x < width && x >= 0
-		&& y < height && y >= 0)
+	int threadId = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+	if (x >= width || x < 0
+		|| y >= height || y < 0)
 	{
-		//int calc = y * width + x;  //their scope is threadLifeTime
-		//uint8_t n = Color(d_Data[calc]);
-		//h   !w
-		//short idx = (y & 1) + !(x & 1);
-		//uint8_t rgb[3] = { 0,0,0 };
-		//rgb[idx] = n;
-
-		//cpy_Data[3 * calc + 0] = rgb[0];
-		//cpy_Data[3 * calc + 1] = rgb[1];
-		//cpy_Data[3 * calc + 2] = rgb[2];
+		return;
 	}
+	if (x>width || x<1 ||y>height || y<1) // the special case with broders 
+	{
+		result[threadId] = 255;
+		return;
+	}
+	int sum = // i know it is a global read, but imo the first memory load may load everything needed
+		d_Data[threadId - width - 1] +
+		d_Data[threadId - 1] +
+		d_Data[threadId + 1] +
+		d_Data[threadId - width] +
+		d_Data[threadId + width] +
+		d_Data[threadId + width + 1] +
+		d_Data[threadId + width - 1] +
+		d_Data[threadId - width + 1];
+
+
+	uint8_t aliveOrNot = d_Data[threadId];
+	if (aliveOrNot == 0)//well this is kind of fucked up, because i did not want to use if statements
+						//but this is the only solution i though of
+	{
+		result[threadId] = Alive(sum);
+		return;
+	}
+	if (sum = 765)
+	{
+		result[threadId] = 255;
+		return;
+	}
+	result[threadId] = 0;
 }
 
 void CudaGame::kernel(cudaStream_t& providedstream)
 {
 	dim3 sizeOfBlock(((width + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK), height);
 
-	Checker << <sizeOfBlock, THREADS_PER_BLOCK, 0, providedstream >> > (d_image, width, height);
+	Checker << <sizeOfBlock, THREADS_PER_BLOCK, 0, providedstream >> > (d_image, d_result, width, height);
 	auto status = cudaGetLastError();
-
 }
