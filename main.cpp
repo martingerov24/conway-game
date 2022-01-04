@@ -93,20 +93,18 @@ void loop() // this was used for cuda, but i will send you the code later this w
 
 
 	std::vector<uint8_t> image;
-	if (ifP1)
-	{
+#if DEBUG==1
 		char* filename = "../image.pbm";
 		image = readingP1(filename, height, width);
 		for (int i = 0; i < image.size(); i++)
 		{
 			image[i] *= 255;
 		}
-	}
-	else
-	{
+#elif DEBUG ==0
 		char* filename = "../conwayGame.png";
 		image = readFile(filename, height, width);
-	}
+	
+#endif
 		std::vector<uint8_t> result(image.size());
 	/// <for Cuda>
 	/// to be fully async i provide on each use stream, where the code will be executed, 
